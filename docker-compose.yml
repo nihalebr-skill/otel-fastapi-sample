@@ -1,0 +1,78 @@
+services:
+  api:
+    container_name: connect-api
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_PYTHON_LOG_CORRELATION=true
+      - PYTHONUNBUFFERED=1
+      - OTEL_SERVICE_NAME=shopping-cart-api
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+    develop:
+      watch:
+        - action: sync
+          path: ./app
+          target: /app/app
+          ignore:
+            - "__pycache__"
+            - "*.pyc"
+    depends_on:
+      - otel-collector
+      - redis
+    networks:
+      - otel-net
+
+  redis:
+    container_name: cart-redis
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - otel-net
+
+  otel-collector:
+    container_name: collector
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    environment:
+      - NEWRELIC_API_KEY=${NEWRELIC_API_KEY} # Will be taken from .env file
+    ports:
+      - "4317:4317" # OTLP gRPC receiver
+      - "8888:8888" # Metrics exposed by the collector
+      - "8889:8889" # Prometheus exporter metrics
+    networks:
+      - otel-net
+    depends_on:
+      - openobserve
+
+  openobserve:
+    container_name: openobserve
+    image: public.ecr.aws/zinclabs/openobserve:latest
+    restart: unless-stopped
+    environment:
+      ZO_ROOT_USER_EMAIL: "root@example.com"
+      ZO_ROOT_USER_PASSWORD: "Complexpass#123"
+    ports:
+      - "5080:5080"
+    volumes:
+      - openobserve-data:/data
+    networks:
+      - otel-net
+
+volumes:
+  redis-data:
+  openobserve-data:
+
+networks:
+  otel-net:
+    driver: bridge
